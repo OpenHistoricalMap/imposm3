@@ -39,6 +39,7 @@ type GeneralizedTable struct {
 
 type Filters struct {
 	ExcludeTags *[][]string `yaml:"exclude_tags"`
+	IncludeTags *[][]string `yaml:"include_tags"`
 }
 
 type Tables map[string]*Table
@@ -263,20 +264,63 @@ func (m *Mapping) extraTags(tableType TableType, tags map[Key]bool) {
 	}
 }
 
-func makeElementFiltersFunction(filterKey, filterValue string) func(tags *element.Tags) bool {
+func makeElementFiltersFunction(virtualTrue bool, virtualFalse bool, filterType string, filterKey, filterValue string) func(tags *element.Tags) bool {
+	//  if ExcludeTags :  virtualTrue == true
+	//  if IncludeTags :  virtualTrue == false
 	return func(tags *element.Tags) bool {
-
 		if v, ok := (*tags)[filterKey]; ok {
 			if filterValue == "__any__" || v == filterValue {
-				return false
+				return virtualFalse
 			}
 		} else if filterValue == "__nil__" {
-			return false
+			return virtualFalse
 		}
-
-		return true
+		return virtualTrue
 	}
 }
+
+func makeElementFiltersListFunction(virtualTrue bool, virtualFalse bool, filterType string, filter []string) func(tags *element.Tags) bool {
+	//  if ExcludeTags :  virtualTrue == true
+	//  if IncludeTags :  virtualTrue == false
+	filterKey := filter[0]
+	filterArray := filter[1:]
+
+	for _, filterValue := range filterArray {
+		if filterValue == "__nil__" || filterValue == "__any__" {
+			log.Errorf("mapping filter error: %s  key:%s  + Array filtering ( more than 1 value ) with `__nil__`  or `__any__` value not allowed!", filterType, filterKey)
+		}
+	}
+
+	return func(tags *element.Tags) bool {
+		if v, ok := (*tags)[filterKey]; ok {
+			for _, filterValue := range filterArray {
+				if v == filterValue {
+					return virtualFalse
+				}
+			}
+		}
+		return virtualTrue
+	}
+}
+
+/*
+# Advanced filtering syntax:
+#
+#   exclude_tags
+#   - [ key, val]                                  // AND key != val
+#   - [ key, __nil__]                              // AND key IS NOT NULL
+#   - [ key, __any__]                              // AND key IS NULL
+#   - [ key, val1,val2]                            // AND key not in ( val1,val2 )                          // check: __nil__,__any__  not allowed
+#   - [ key, val1,val2,val3, ... valn]             // AND key not in ( val1,val2,val3, ... valn)            // check: __nil__,__any__  not allowed
+#   include_tags
+#   - [ key, val]                                  // AND key = val
+#   - [ key, __nil__]                              // AND key IS NULL
+#   - [ key, __any__]                              // AND key IS NOT NULL
+#   - [ key, val1,val2]                            // AND key in ( val1, val2 )                              // check: __nil__,__any__  not allowed
+#   - [ key, val1,val2,val3, ... valn]             // AND key in ( val1,val2,val3, ... valn)                 // check: __nil__,__any__  not allowed
+#
+# -------------------------------------------------------------------------------------------------------------------------------------------------
+*/
 
 func (m *Mapping) ElementFilters() map[string][]ElementFilter {
 	result := make(map[string][]ElementFilter)
@@ -284,11 +328,34 @@ func (m *Mapping) ElementFilters() map[string][]ElementFilter {
 		if t.Filters == nil {
 			continue
 		}
+
+		// exclude_tags
 		if t.Filters.ExcludeTags != nil {
 			for _, filterKeyVal := range *t.Filters.ExcludeTags {
-				result[name] = append(result[name], makeElementFiltersFunction(filterKeyVal[0], filterKeyVal[1]))
+				if len(filterKeyVal) == 2 {
+					result[name] = append(result[name], makeElementFiltersFunction(true, false, "exclude_tags", filterKeyVal[0], filterKeyVal[1]))
+				} else if len(filterKeyVal) > 2 {
+					result[name] = append(result[name], makeElementFiltersListFunction(true, false, "exclude_tags", filterKeyVal))
+				} else if len(filterKeyVal) < 2 {
+					log.Errorf("mapping filter error: %s  key:%s  need at least 1 more value !", "exclude_tags", filterKeyVal[0])
+				}
 			}
 		}
+
+		// include_tags
+		if t.Filters.IncludeTags != nil {
+			for _, filterKeyVal := range *t.Filters.IncludeTags {
+				if len(filterKeyVal) == 2 {
+					result[name] = append(result[name], makeElementFiltersFunction(false, true, "include_tags", filterKeyVal[0], filterKeyVal[1]))
+				} else if len(filterKeyVal) > 2 {
+					result[name] = append(result[name], makeElementFiltersListFunction(false, true, "include_tags", filterKeyVal))
+				} else if len(filterKeyVal) < 2 {
+					log.Errorf("mapping filter parameter error: %s  key:%s  need at least 1 more value !", "include_tags", filterKeyVal[0])
+
+				}
+			}
+		}
+
 	}
 	return result
 }

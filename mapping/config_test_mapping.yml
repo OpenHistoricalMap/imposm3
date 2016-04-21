@@ -1,0 +1,269 @@
+
+
+# test definitions for  ./mapping/config_test.go
+# t0 .. t6 tables   - the name is important!  
+#
+#
+# important! this only for testing! referenced keys in the 'exclude_tags' or 'include_tags' will not store automaticly in the imposm3 cache! 
+# 
+# Advanced filtering syntax:
+#
+#   exclude_tags
+#   - [ key, val]                                  // AND key != val        
+#   - [ key, __nil__]                              // AND key IS NOT NULL    
+#   - [ key, __any__]                              // AND key IS NULL 
+#   - [ key, val1,val2]                            // AND key not in ( val1,val2 )                          // check: __nil__,__any__  not allowed
+#   - [ key, val1,val2,val3, ... valn]             // AND key not in ( val1,val2,val3, ... valn)            // check: __nil__,__any__  not allowed 
+#   include_tags
+#   - [ key, val]                                  // AND key = val           
+#   - [ key, __nil__]                              // AND key IS NULL    
+#   - [ key, __any__]                              // AND key IS NOT NULL  
+#   - [ key, val1,val2]                            // AND key in ( val1, val2 )                              // check: __nil__,__any__  not allowed 
+#   - [ key, val1,val2,val3, ... valn]             // AND key in ( val1,val2,val3, ... valn)                 // check: __nil__,__any__  not allowed  
+#
+# -------------------------------------------------------------------------------------------------------------------------------------------------
+#
+
+tables:
+
+# EXPECTED:
+# ----------------------------------------------
+#  where
+#       (   admin_level=2 
+#        OR admin_level=4) 
+#  AND  boundary IN ( administrative,maritime) 
+  t0:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      include_tags:                  
+      - ["boundary", "administrative","maritime"]                            
+    mapping:
+      admin_level:
+      - '2'
+      - '4'
+    type: linestring
+
+
+# EXPECTED:
+# ----------------------------------------------
+# where (
+#             (boundary is not null)  
+#         OR  (admin_level is not null )
+#       )
+# AND  admin_level IN (2,4) 
+  t1:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      include_tags:
+      - ["admin_level", "2","4"]                            
+    mapping:
+      boundary:
+      - administrative
+      - maritime
+    type: linestring
+
+
+# EXPECTED:
+# ----------------------------------------------
+# where (
+#             (boundary is not null)  
+#         OR  (admin_level is not null )
+#       )
+# AND  admin_level IN (2,4) 
+# AND  boundary    IN (administrative,maritime)  
+#
+# -------------------------------------------------------
+# !Note can be eliminated
+#       include_tags:   ["admin_level", "5","6","7","8"]            -->    AND  admin_level     IN (5,6,7,8)
+#       exclude_tags:   ["admin_level", "5","6","7","8"]            -->    AND  admin_level NOT IN (5,6,7,8)
+#
+
+  t2:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      include_tags:
+      - ["admin_level", "2","4","5","6","7","8"] 
+      - ["boundary", "administrative","maritime"]
+      exclude_tags:
+      - ["admin_level", "5","6","7","8"]                                         
+    mapping:
+      boundary:
+      - __any__
+      admin_level:
+      - __any__
+    type: linestring
+
+
+# EXPECTED:
+# ----------------------------------------------
+# where (
+#             (boundary    IS NOT NULL )  
+#         OR  (admin_level IS NOT NULL )
+#       )
+# AND admin_level IN (2,4)  
+# AND admin_level NOT NULL  
+# AND boundary    IN (administrative,maritime)
+# AND boundary    NOT NULL
+  t3:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      include_tags:
+      - ["admin_level", "2","4"]
+      - ["admin_level", "__any__"]        
+      - ["boundary", "administrative","maritime"]
+      - ["boundary", "__any__"]                                          
+    mapping:
+      boundary:
+      - __any__
+      admin_level:
+      - __any__
+    type: linestring
+
+
+
+# EXPECTED:
+# ----------------------------------------------
+# where (
+#             (boundary    IS NOT NULL )  
+#         OR  (admin_level IS NOT NULL )
+#       )
+# AND admin_level != 'X'  
+# AND admin_level != 'Y'  
+# AND admin_level != '0'  
+# AND admin_level != '1'  
+# AND admin_level != '3'  
+# AND admin_level != '5'  
+# AND admin_level != '6'  
+# AND admin_level != '7' 
+# AND admin_level != '8'  
+# AND admin_level NOT NULL
+  t4:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      exclude_tags:
+      - ["admin_level", "X"] 
+      - ["admin_level", "Y"] 
+      - ["admin_level", "0"]  
+      - ["admin_level", "1"] 
+      - ["admin_level", "3"] 
+      - ["admin_level", "5"]
+      - ["admin_level", "6"] 
+      - ["admin_level", "7"] 
+      - ["admin_level", "8"]                            
+      - ["admin_level", "__nil__"]                             
+    mapping:
+      boundary:
+      - administrative
+      - maritime
+    type: linestring    
+
+
+
+
+
+
+# EXPECTED:
+# ----------------------------------------------
+# where (
+#             (boundary    IS NOT NULL )  
+#         OR  (admin_level IS NOT NULL )
+#       )
+# AND admin_level != 'X'  
+# AND admin_level != 'Y'  
+# AND admin_level != '0'  
+# AND admin_level != '1'  
+# AND admin_level != '3'  
+# AND admin_level != '5'  
+# AND admin_level != '6'  
+# AND admin_level != '7' 
+# AND admin_level != '8'  
+# AND admin_level NOT NULL
+# AND boundary NOT NULL
+# AND boundary != 'political'  
+# AND boundary != 'census'  
+# AND boundary != 'cadastral'  
+# AND boundary != 'national_park'  
+  t5:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      exclude_tags:
+      - ["admin_level", "X"] 
+      - ["admin_level", "Y"] 
+      - ["admin_level", "0"]  
+      - ["admin_level", "1"] 
+      - ["admin_level", "3"] 
+      - ["admin_level", "5"]
+      - ["admin_level", "6"] 
+      - ["admin_level", "7"] 
+      - ["admin_level", "8"]                            
+      - ["admin_level", "__nil__"] 
+      - ["boundary", "__nil__"] 
+      - ["boundary", "political"]
+      - ["boundary", "census"]  
+      - ["boundary", "cadastral"]  
+      - ["boundary", "national_park"]                                                      
+    mapping:
+      boundary:
+      - __any__
+      admin_level:
+      - __any__
+    type: linestring    
+  
+
+
+
+
+# EXPECTED:
+# ----------------------------------------------
+# Where 
+# (      boundary=administrative 
+#     OR boundary=maritime
+# )  
+# AND name IS NOT NULL 
+  t6:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      exclude_tags:                       
+      - ["name", "__nil__"]                             
+    mapping:
+      boundary:
+      - administrative
+      - maritime
+    type: linestring 
+      
+  
