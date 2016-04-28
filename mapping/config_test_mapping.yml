@@ -2,9 +2,6 @@
 
 # test definitions for  ./mapping/config_test.go
 # t0 .. t6 tables   - the name is important!  
-#
-#
-# important! this only for testing! referenced keys in the 'exclude_tags' or 'include_tags' will not store automaticly in the imposm3 cache! 
 # 
 # Advanced filtering syntax:
 #
@@ -14,7 +11,7 @@
 #   - [ key, __any__]                              // AND key IS NULL 
 #   - [ key, val1,val2]                            // AND key not in ( val1,val2 )                          // check: __nil__,__any__  not allowed
 #   - [ key, val1,val2,val3, ... valn]             // AND key not in ( val1,val2,val3, ... valn)            // check: __nil__,__any__  not allowed 
-#   include_tags
+#   exclude_negated_tags
 #   - [ key, val]                                  // AND key = val           
 #   - [ key, __nil__]                              // AND key IS NULL    
 #   - [ key, __any__]                              // AND key IS NOT NULL  
@@ -40,7 +37,7 @@ tables:
       name: admin_level
       type: integer
     filters:
-      include_tags:                  
+      exclude_negated_tags:                  
       - ["boundary", "administrative","maritime"]                            
     mapping:
       admin_level:
@@ -64,7 +61,7 @@ tables:
       name: admin_level
       type: integer
     filters:
-      include_tags:
+      exclude_negated_tags:
       - ["admin_level", "2","4"]                            
     mapping:
       boundary:
@@ -84,8 +81,8 @@ tables:
 #
 # -------------------------------------------------------
 # !Note can be eliminated
-#       include_tags:   ["admin_level", "5","6","7","8"]            -->    AND  admin_level     IN (5,6,7,8)
-#       exclude_tags:   ["admin_level", "5","6","7","8"]            -->    AND  admin_level NOT IN (5,6,7,8)
+#       exclude_negated_tags:   ["admin_level", "5","6","7","8"]            -->    AND  admin_level     IN (5,6,7,8)
+#       exclude_tags:           ["admin_level", "5","6","7","8"]            -->    AND  admin_level NOT IN (5,6,7,8)
 #
 
   t2:
@@ -96,7 +93,7 @@ tables:
       name: admin_level
       type: integer
     filters:
-      include_tags:
+      exclude_negated_tags:
       - ["admin_level", "2","4","5","6","7","8"] 
       - ["boundary", "administrative","maritime"]
       exclude_tags:
@@ -127,7 +124,7 @@ tables:
       name: admin_level
       type: integer
     filters:
-      include_tags:
+      exclude_negated_tags:
       - ["admin_level", "2","4"]
       - ["admin_level", "__any__"]        
       - ["boundary", "administrative","maritime"]

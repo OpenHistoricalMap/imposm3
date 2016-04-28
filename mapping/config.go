@@ -39,7 +39,7 @@ type GeneralizedTable struct {
 
 type Filters struct {
 	ExcludeTags *[][]string `yaml:"exclude_tags"`
-	IncludeTags *[][]string `yaml:"include_tags"`
+	ExcludeNegatedTags *[][]string `yaml:"exclude_negated_tags"`
 }
 
 type Tables map[string]*Table
@@ -266,7 +266,7 @@ func (m *Mapping) extraTags(tableType TableType, tags map[Key]bool) {
 
 func makeElementFiltersFunction(virtualTrue bool, virtualFalse bool, filterType string, filterKey, filterValue string) func(tags *element.Tags) bool {
 	//  if ExcludeTags :  virtualTrue == true
-	//  if IncludeTags :  virtualTrue == false
+	//  if ExcludeNegatedTags :  virtualTrue == false
 	return func(tags *element.Tags) bool {
 		if v, ok := (*tags)[filterKey]; ok {
 			if filterValue == "__any__" || v == filterValue {
@@ -281,7 +281,7 @@ func makeElementFiltersFunction(virtualTrue bool, virtualFalse bool, filterType 
 
 func makeElementFiltersListFunction(virtualTrue bool, virtualFalse bool, filterType string, filter []string) func(tags *element.Tags) bool {
 	//  if ExcludeTags :  virtualTrue == true
-	//  if IncludeTags :  virtualTrue == false
+	//  if ExcludeNegatedTags :  virtualTrue == false
 	filterKey := filter[0]
 	filterArray := filter[1:]
 
@@ -312,12 +312,14 @@ func makeElementFiltersListFunction(virtualTrue bool, virtualFalse bool, filterT
 #   - [ key, __any__]                              // AND key IS NULL
 #   - [ key, val1,val2]                            // AND key not in ( val1,val2 )                          // check: __nil__,__any__  not allowed
 #   - [ key, val1,val2,val3, ... valn]             // AND key not in ( val1,val2,val3, ... valn)            // check: __nil__,__any__  not allowed
-#   include_tags
+#   exclude_negated_tags
 #   - [ key, val]                                  // AND key = val
 #   - [ key, __nil__]                              // AND key IS NULL
 #   - [ key, __any__]                              // AND key IS NOT NULL
 #   - [ key, val1,val2]                            // AND key in ( val1, val2 )                              // check: __nil__,__any__  not allowed
 #   - [ key, val1,val2,val3, ... valn]             // AND key in ( val1,val2,val3, ... valn)                 // check: __nil__,__any__  not allowed
+#
+# Internal processing order:  exclude_tags ;  exclude_negated_tags
 #
 # -------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -342,15 +344,15 @@ func (m *Mapping) ElementFilters() map[string][]ElementFilter {
 			}
 		}
 
-		// include_tags
-		if t.Filters.IncludeTags != nil {
-			for _, filterKeyVal := range *t.Filters.IncludeTags {
+		// exclude_negated_tags
+		if t.Filters.ExcludeNegatedTags != nil {
+			for _, filterKeyVal := range *t.Filters.ExcludeNegatedTags {
 				if len(filterKeyVal) == 2 {
-					result[name] = append(result[name], makeElementFiltersFunction(false, true, "include_tags", filterKeyVal[0], filterKeyVal[1]))
+					result[name] = append(result[name], makeElementFiltersFunction(false, true, "exclude_negated_tags", filterKeyVal[0], filterKeyVal[1]))
 				} else if len(filterKeyVal) > 2 {
-					result[name] = append(result[name], makeElementFiltersListFunction(false, true, "include_tags", filterKeyVal))
+					result[name] = append(result[name], makeElementFiltersListFunction(false, true, "exclude_negated_tags", filterKeyVal))
 				} else if len(filterKeyVal) < 2 {
-					log.Errorf("mapping filter parameter error: %s  key:%s  need at least 1 more value !", "include_tags", filterKeyVal[0])
+					log.Errorf("mapping filter parameter error: %s  key:%s  need at least 1 more value !", "exclude_negated_tags", filterKeyVal[0])
 
 				}
 			}
