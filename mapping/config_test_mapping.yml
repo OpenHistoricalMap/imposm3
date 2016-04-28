@@ -1,22 +1,30 @@
 
 
 # test definitions for  ./mapping/config_test.go
-# t0 .. t6 tables   - the name is important!  
+# t0 .. t9 tables   - the name is important!  
 # 
 # Advanced filtering syntax:
 #
 #   exclude_tags
-#   - [ key, val]                                  // AND key != val        
-#   - [ key, __nil__]                              // AND key IS NOT NULL    
-#   - [ key, __any__]                              // AND key IS NULL 
+#   - [ key, val]                                  // AND key != val
+#   - [ key, __nil__]                              // AND key IS NOT NULL
+#   - [ key, __any__]                              // AND key IS NULL
 #   - [ key, val1,val2]                            // AND key not in ( val1,val2 )                          // check: __nil__,__any__  not allowed
-#   - [ key, val1,val2,val3, ... valn]             // AND key not in ( val1,val2,val3, ... valn)            // check: __nil__,__any__  not allowed 
+#   - [ key, val1,val2,val3, ... valn]             // AND key not in ( val1,val2,val3, ... valn)            // check: __nil__,__any__  not allowed
 #   exclude_negated_tags
-#   - [ key, val]                                  // AND key = val           
-#   - [ key, __nil__]                              // AND key IS NULL    
-#   - [ key, __any__]                              // AND key IS NOT NULL  
-#   - [ key, val1,val2]                            // AND key in ( val1, val2 )                              // check: __nil__,__any__  not allowed 
-#   - [ key, val1,val2,val3, ... valn]             // AND key in ( val1,val2,val3, ... valn)                 // check: __nil__,__any__  not allowed  
+#   - [ key, val]                                  // AND key = val
+#   - [ key, __nil__]                              // AND key IS NULL
+#   - [ key, __any__]                              // AND key IS NOT NULL
+#   - [ key, val1,val2]                            // AND key in ( val1, val2 )                              // check: __nil__,__any__  not allowed
+#   - [ key, val1,val2,val3, ... valn]             // AND key in ( val1,val2,val3, ... valn)                 // check: __nil__,__any__  not allowed
+#   exclude_regexp_tags:
+#   - [ key, regexpr]                              // AND NOT ( regexpr.MatchString ( key.value) == true )       // see https://golang.org/pkg/regexp/
+#   exclude_negated_regexp_tags:
+#   - [ key, regexpr]                              // AND ( regexpr.MatchString ( key.value) == true )   // see https://golang.org/pkg/regexp/
+#
+# Internal processing order:  exclude_tags ->  exclude_negated_tags -> exclude_regexp_tags -> exclude_negated_regexp_tags
+#
+# if you want test Regexp -> https://regex-golang.appspot.com/assets/html/index.html
 #
 # -------------------------------------------------------------------------------------------------------------------------------------------------
 #
@@ -263,4 +271,92 @@ tables:
       - maritime
     type: linestring 
       
+  
+  
+# EXPECTED -  
+# ----------------------------------------------
+# Where 
+# (      boundary=administrative 
+#     OR boundary=maritime
+# )  
+# AND name IS NOT NULL
+# AND name.value  IS regexpMatchString('^[a-zA-Z]*$' )   
+#
+#
+  t7:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      exclude_tags:                       
+      - ["name", "__nil__"]
+      exclude_negated_regexp_tags:                       
+      - ["name", '^[a-zA-Z]*$']                                      
+    mapping:
+      boundary:
+      - administrative
+      - maritime
+    type: linestring 
+      
+
+# EXPECTED:
+# ----------------------------------------------
+# Where 
+# (      boundary=administrative
+#     OR boundary=maritime 
+# )  
+# AND admin_level.value  IS NOT regexpMatchString('^[0-9]+$' )   
+#
+# see: https://regex-golang.appspot.com/assets/html/index.html
+#
+# Note: be careful because yaml interprets escape sequences inside double quoted strings!
+#       so use  single quoted string !
+
+  t8:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      exclude_regexp_tags:                       
+      - ["admin_level", '^[0-9]+$']                             
+    mapping:
+      boundary:
+      - administrative
+      - maritime      
+    type: linestring 
+      
+  
+
+# EXPECTED:
+# ----------------------------------------------
+# Where 
+# (      boundary is NOT NULL 
+# )  
+# AND boundary.value  IS regexpMatchString( '^[a-z_]+$' )    //   only   [a-z_] is a valid osm values for boundary  ... 
+#
+# see: https://regex-golang.appspot.com/assets/html/index.html
+#
+# Note: be careful because yaml interprets escape sequences inside double quoted strings!
+#       so use  single quoted string !
+ 
+  t9:
+    fields:
+    - name: id
+      type: id
+    - key: admin_level
+      name: admin_level
+      type: integer
+    filters:
+      exclude_negated_regexp_tags:                       
+      - ["boundary", '^[a-z_]+$']                             
+    mapping:
+      boundary:
+      - __any__    
+    type: linestring 
   

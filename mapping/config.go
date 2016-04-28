@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"regexp"
 
 	"github.com/omniscale/imposm3/element"
 
@@ -38,8 +39,10 @@ type GeneralizedTable struct {
 }
 
 type Filters struct {
-	ExcludeTags *[][]string `yaml:"exclude_tags"`
-	ExcludeNegatedTags *[][]string `yaml:"exclude_negated_tags"`
+	ExcludeTags              *[][]string `yaml:"exclude_tags"`
+	ExcludeNegatedTags       *[][]string `yaml:"exclude_negated_tags"`
+	ExcludeRegexpTags        *[][]string `yaml:"exclude_regexp_tags"`
+	ExcludeNegatedRegexpTags *[][]string `yaml:"exclude_negated_regexp_tags"`
 }
 
 type Tables map[string]*Table
@@ -303,6 +306,25 @@ func makeElementFiltersListFunction(virtualTrue bool, virtualFalse bool, filterT
 	}
 }
 
+func makeElementRegexpFiltersFunction(virtualTrue bool, virtualFalse bool, filterType string, filterKey, regexprValue string) func(tags *element.Tags) bool {
+
+	//  if ExcludeRegexpTags        :  virtualTrue == true
+	//  if ExcludeNegatedRegexpTags :  virtualTrue == false
+
+	// Compile regular expression
+	// if not valid regexp --> panic !
+	r := regexp.MustCompile(regexprValue)
+
+	return func(tags *element.Tags) bool {
+		if v, ok := (*tags)[filterKey]; ok {
+			if r.MatchString(v) {
+				return virtualFalse
+			}
+		}
+		return virtualTrue
+	}
+}
+
 /*
 # Advanced filtering syntax:
 #
@@ -318,9 +340,16 @@ func makeElementFiltersListFunction(virtualTrue bool, virtualFalse bool, filterT
 #   - [ key, __any__]                              // AND key IS NOT NULL
 #   - [ key, val1,val2]                            // AND key in ( val1, val2 )                              // check: __nil__,__any__  not allowed
 #   - [ key, val1,val2,val3, ... valn]             // AND key in ( val1,val2,val3, ... valn)                 // check: __nil__,__any__  not allowed
+#   exclude_regexp_tags:
+#   - [ key, regexpr]                              // AND NOT ( regexpr.MatchString ( key.value) == true )       // see https://golang.org/pkg/regexp/
+#   exclude_negated_regexp_tags:
+#   - [ key, regexpr]                              // AND ( regexpr.MatchString ( key.value) == true )   // see https://golang.org/pkg/regexp/
 #
-# Internal processing order:  exclude_tags ;  exclude_negated_tags
+# Internal processing order:  exclude_tags ->  exclude_negated_tags -> exclude_regexp_tags -> exclude_negated_regexp_tags
 #
+# if you want test Regexp -> https://regex-golang.appspot.com/assets/html/index.html
+#
+# see test examples : config_test.go and config_test_mapping.yml
 # -------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
@@ -354,6 +383,27 @@ func (m *Mapping) ElementFilters() map[string][]ElementFilter {
 				} else if len(filterKeyVal) < 2 {
 					log.Errorf("mapping filter parameter error: %s  key:%s  need at least 1 more value !", "exclude_negated_tags", filterKeyVal[0])
 
+				}
+			}
+		}
+
+		// exclude_regexp_tags
+		if t.Filters.ExcludeRegexpTags != nil {
+			for _, filterKeyVal := range *t.Filters.ExcludeRegexpTags {
+				if len(filterKeyVal) == 2 {
+					result[name] = append(result[name], makeElementRegexpFiltersFunction(true, false, "exclude_regexp_tags", filterKeyVal[0], filterKeyVal[1]))
+				} else {
+					log.Errorf("mapping filter parameter error: %s  key:%s  need a [key],[regexpr] value !", "exclude_regexp_tags", filterKeyVal[0])
+				}
+			}
+		}
+
+		if t.Filters.ExcludeNegatedRegexpTags != nil {
+			for _, filterKeyVal := range *t.Filters.ExcludeNegatedRegexpTags {
+				if len(filterKeyVal) == 2 {
+					result[name] = append(result[name], makeElementRegexpFiltersFunction(false, true, "exclude_negated_regexp_tags", filterKeyVal[0], filterKeyVal[1]))
+				} else {
+					log.Errorf("mapping filter parameter error: %s  key:%s  need a [key],[regexpr] value !", "exclude_negated_regexp_tags", filterKeyVal[0])
 				}
 			}
 		}
