@@ -14,8 +14,8 @@ import (
 
 	"github.com/lib/pq/hstore"
 
-	"github.com/omniscale/imposm3/diff"
 	"github.com/omniscale/imposm3/geom/geos"
+	"github.com/omniscale/imposm3/update"
 
 	"github.com/omniscale/imposm3/config"
 	"github.com/omniscale/imposm3/import_"
@@ -33,6 +33,7 @@ type importConfig struct {
 	mappingFileName string
 	cacheDir        string
 	verbose         bool
+	expireTileDir   string
 }
 
 type importTestSuite struct {
@@ -152,10 +153,13 @@ func (s *importTestSuite) updateOsm(t *testing.T, diffFile string) {
 		"-limitto", "clipping.geojson",
 		"-dbschema-production", dbschemaProduction,
 		"-mapping", s.config.mappingFileName,
-		diffFile,
 	}
+	if s.config.expireTileDir != "" {
+		args = append(args, "-expiretiles-dir", s.config.expireTileDir)
+	}
+	args = append(args, diffFile)
 	config.ParseDiffImport(args)
-	diff.Diff()
+	update.Diff()
 }
 
 func (s *importTestSuite) dropSchemas() {
@@ -193,16 +197,6 @@ type record struct {
 	tags    map[string]string
 }
 
-func (s *importTestSuite) queryExists(t *testing.T, table string, id int64) bool {
-	row := s.db.QueryRow(fmt.Sprintf(`SELECT EXISTS(SELECT * FROM "%s"."%s" WHERE osm_id=$1)`, dbschemaProduction, table), id)
-	var exists bool
-	if err := row.Scan(&exists); err != nil {
-		t.Error(err)
-		return false
-	}
-	return exists
-}
-
 func (s *importTestSuite) query(t *testing.T, table string, id int64, keys []string) record {
 	kv := make([]string, len(keys))
 	for i, k := range keys {
@@ -237,11 +231,11 @@ func (s *importTestSuite) query(t *testing.T, table string, id int64, keys []str
 }
 
 func (s *importTestSuite) queryTags(t *testing.T, table string, id int64) record {
-	stmt := fmt.Sprintf(`SELECT osm_id, ST_AsText(geometry), tags FROM "%s"."%s" WHERE osm_id=$1`, dbschemaProduction, table)
+	stmt := fmt.Sprintf(`SELECT osm_id, tags FROM "%s"."%s" WHERE osm_id=$1`, dbschemaProduction, table)
 	row := s.db.QueryRow(stmt, id)
 	r := record{}
 	h := hstore.Hstore{}
-	if err := row.Scan(&r.id, &r.wkt, &h); err != nil {
+	if err := row.Scan(&r.id, &h); err != nil {
 		if err == sql.ErrNoRows {
 			r.missing = true
 		} else {
@@ -315,9 +309,32 @@ func (s *importTestSuite) queryGeom(t *testing.T, table string, id int64) *geos.
 	defer g.Finish()
 	geom := g.FromWkt(r.wkt)
 	if geom == nil {
-		t.Fatalf("unable to read WKT for %s", id)
+		t.Fatalf("unable to read WKT for %d", id)
 	}
 	return geom
+}
+
+func (s *importTestSuite) queryDynamic(t *testing.T, table, where string) []map[string]string {
+	stmt := fmt.Sprintf(`SELECT hstore(r) FROM (SELECT ST_AsText(geometry) AS wkt, * FROM "%s"."%s" WHERE %s) AS r`, dbschemaProduction, table, where)
+	rows, err := s.db.Query(stmt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := []map[string]string{}
+	for rows.Next() {
+		h := hstore.Hstore{}
+		if err := rows.Scan(&h); err != nil {
+			t.Fatal(err)
+		}
+		r := make(map[string]string)
+		for k, v := range h.Map {
+			if v.Valid {
+				r[k] = v.String
+			}
+		}
+		results = append(results, r)
+	}
+	return results
 }
 
 type checkElem struct {
@@ -325,14 +342,6 @@ type checkElem struct {
 	id      int64
 	osmType string
 	tags    map[string]string
-}
-
-func assertRecordsMissing(t *testing.T, elems []checkElem) {
-	for _, e := range elems {
-		if ts.queryExists(t, e.table, e.id) {
-			t.Errorf("found %d in %d", e.id, e.table)
-		}
-	}
 }
 
 func assertRecords(t *testing.T, elems []checkElem) {
@@ -379,14 +388,14 @@ func assertHstore(t *testing.T, elems []checkElem) {
 	}
 }
 
-func assertValid(t *testing.T, e checkElem) {
+func assertGeomValid(t *testing.T, e checkElem) {
 	geom := ts.queryGeom(t, e.table, e.id)
 	if !ts.g.IsValid(geom) {
 		t.Fatalf("geometry of %d is invalid", e.id)
 	}
 }
 
-func assertArea(t *testing.T, e checkElem, expect float64) {
+func assertGeomArea(t *testing.T, e checkElem, expect float64) {
 	geom := ts.queryGeom(t, e.table, e.id)
 	if !ts.g.IsValid(geom) {
 		t.Fatalf("geometry of %d is invalid", e.id)
@@ -397,7 +406,7 @@ func assertArea(t *testing.T, e checkElem, expect float64) {
 	}
 }
 
-func assertLength(t *testing.T, e checkElem, expect float64) {
+func assertGeomLength(t *testing.T, e checkElem, expect float64) {
 	geom := ts.queryGeom(t, e.table, e.id)
 	if !ts.g.IsValid(geom) {
 		t.Fatalf("geometry of %d is invalid", e.id)

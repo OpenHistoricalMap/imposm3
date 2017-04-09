@@ -7,23 +7,62 @@ import (
 
 func (m *Mapping) PointMatcher() NodeMatcher {
 	mappings := make(TagTables)
-	m.mappings("point", mappings)
+	m.mappings(PointTable, mappings)
 	filters := m.ElementFilters()
-	return &tagMatcher{mappings, m.tables("point"), filters, false}
+	return &tagMatcher{
+		mappings:   mappings,
+		tables:     m.tables(PointTable),
+		filters:    filters,
+		matchAreas: false,
+	}
 }
 
 func (m *Mapping) LineStringMatcher() WayMatcher {
 	mappings := make(TagTables)
-	m.mappings("linestring", mappings)
+	m.mappings(LineStringTable, mappings)
 	filters := m.ElementFilters()
-	return &tagMatcher{mappings, m.tables("linestring"), filters, false}
+	return &tagMatcher{
+		mappings:   mappings,
+		tables:     m.tables(LineStringTable),
+		filters:    filters,
+		matchAreas: false,
+	}
 }
 
 func (m *Mapping) PolygonMatcher() RelWayMatcher {
 	mappings := make(TagTables)
-	m.mappings("polygon", mappings)
+	m.mappings(PolygonTable, mappings)
 	filters := m.ElementFilters()
-	return &tagMatcher{mappings, m.tables("polygon"), filters, true}
+	return &tagMatcher{
+		mappings:   mappings,
+		tables:     m.tables(PolygonTable),
+		filters:    filters,
+		matchAreas: true,
+	}
+}
+
+func (m *Mapping) RelationMatcher() RelationMatcher {
+	mappings := make(TagTables)
+	m.mappings(RelationTable, mappings)
+	filters := m.ElementFilters()
+	return &tagMatcher{
+		mappings:   mappings,
+		tables:     m.tables(RelationTable),
+		filters:    filters,
+		matchAreas: true,
+	}
+}
+
+func (m *Mapping) RelationMemberMatcher() RelationMatcher {
+	mappings := make(TagTables)
+	m.mappings(RelationMemberTable, mappings)
+	filters := m.ElementFilters()
+	return &tagMatcher{
+		mappings:   mappings,
+		tables:     m.tables(RelationMemberTable),
+		filters:    filters,
+		matchAreas: true,
+	}
 }
 
 type Match struct {
@@ -61,8 +100,12 @@ func (m *Match) Row(elem *element.OSMElem, geom *geom.Geometry) []interface{} {
 	return m.tableFields.MakeRow(elem, geom, *m)
 }
 
+func (m *Match) MemberRow(rel *element.Relation, member *element.Member, geom *geom.Geometry) []interface{} {
+	return m.tableFields.MakeMemberRow(rel, member, geom, *m)
+}
+
 func (tm *tagMatcher) MatchNode(node *element.Node) []Match {
-	return tm.match(&node.Tags)
+	return tm.match(node.Tags, false)
 }
 
 func (tm *tagMatcher) MatchWay(way *element.Way) []Match {
@@ -71,21 +114,22 @@ func (tm *tagMatcher) MatchWay(way *element.Way) []Match {
 			if way.Tags["area"] == "no" {
 				return nil
 			}
-			return tm.match(&way.Tags)
+			return tm.match(way.Tags, true)
 		}
 	} else { // match way as linestring
 		if way.IsClosed() {
 			if way.Tags["area"] == "yes" {
 				return nil
 			}
+			return tm.match(way.Tags, true)
 		}
-		return tm.match(&way.Tags)
+		return tm.match(way.Tags, false)
 	}
 	return nil
 }
 
 func (tm *tagMatcher) MatchRelation(rel *element.Relation) []Match {
-	return tm.match(&rel.Tags)
+	return tm.match(rel.Tags, true)
 }
 
 type orderedMatch struct {
@@ -93,13 +137,18 @@ type orderedMatch struct {
 	order int
 }
 
-func (tm *tagMatcher) match(tags *element.Tags) []Match {
+func (tm *tagMatcher) match(tags element.Tags, closed bool) []Match {
 	tables := make(map[DestTable]orderedMatch)
 
 	addTables := func(k, v string, tbls []OrderedDestTable) {
 		for _, t := range tbls {
 			this := orderedMatch{
-				Match: Match{k, v, t.DestTable, tm.tables[t.Name]},
+				Match: Match{
+					Key:         k,
+					Value:       v,
+					Table:       t.DestTable,
+					tableFields: tm.tables[t.Name],
+				},
 				order: t.order,
 			}
 			if other, ok := tables[t.DestTable]; ok {
@@ -109,10 +158,13 @@ func (tm *tagMatcher) match(tags *element.Tags) []Match {
 			}
 			tables[t.DestTable] = this
 		}
-
 	}
 
-	for k, v := range *tags {
+	if values, ok := tm.mappings[Key("__any__")]; ok {
+		addTables("__any__", "__any__", values["__any__"])
+	}
+
+	for k, v := range tags {
 		values, ok := tm.mappings[Key(k)]
 		if ok {
 			if tbls, ok := values["__any__"]; ok {
@@ -129,7 +181,7 @@ func (tm *tagMatcher) match(tags *element.Tags) []Match {
 		filteredOut := false
 		if ok {
 			for _, filter := range filters {
-				if !filter(tags) {
+				if !filter(tags, Key(match.Key), closed) {
 					filteredOut = true
 					break
 				}

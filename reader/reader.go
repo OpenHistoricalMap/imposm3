@@ -50,10 +50,13 @@ func readersForCpus(cpus int) (int64, int64, int64, int64, int64) {
 	return int64(math.Ceil(cpuf * 0.75)), int64(math.Ceil(cpuf * 0.25)), int64(math.Ceil(cpuf * 0.25)), int64(math.Ceil(cpuf * 0.25)), int64(math.Ceil(cpuf * 0.25))
 }
 
-func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
-	tagmapping *mapping.Mapping, pbfFile *pbf.Pbf,
+func ReadPbf(
+	filename string,
+	cache *osmcache.OSMCache,
+	progress *stats.Statistics,
+	tagmapping *mapping.Mapping,
 	limiter *limit.Limiter,
-) {
+) error {
 	nodes := make(chan []element.Node, 4)
 	coords := make(chan []element.Node, 4)
 	ways := make(chan []element.Way, 4)
@@ -64,16 +67,19 @@ func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
 		withLimiter = true
 	}
 
-	if pbfFile.Header.Time.Unix() != 0 {
-		log.Printf("reading %s with data till %v", pbfFile.Filename, pbfFile.Header.Time.Local())
+	parser, err := pbf.NewParser(filename)
+	if err != nil {
+		return err
 	}
 
-	parser := pbf.NewParser(pbfFile, coords, nodes, ways, relations)
+	if header := parser.Header(); header.Time.Unix() != 0 {
+		log.Printf("reading %s with data till %v", filename, header.Time.Local())
+	}
 
 	// wait for all coords/nodes to be processed before continuing with
 	// ways. required for -limitto checks
 	coordsSync := sync.WaitGroup{}
-	parser.FinishedCoords(func() {
+	parser.RegisterFirstWayCallback(func() {
 		for i := 0; int64(i) < nCoords; i++ {
 			coords <- nil
 		}
@@ -86,7 +92,7 @@ func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
 	// wait for all ways to be processed before continuing with
 	// relations. required for -limitto checks
 	waysSync := sync.WaitGroup{}
-	parser.FinishedWays(func() {
+	parser.RegisterFirstRelationCallback(func() {
 		for i := 0; int64(i) < nWays; i++ {
 			ways <- nil
 		}
@@ -152,7 +158,7 @@ func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
 						numWithTags += 1
 					}
 					if withLimiter {
-						cached, err := cache.Ways.FirstMemberIsCached(rels[i].Members)
+						cached, err := cache.FirstMemberIsCached(rels[i].Members)
 						if err != nil {
 							log.Errorf("error while checking for cached members of relation %d: %v", rels[i].Id, err)
 							cached = true // don't skip in case of error
@@ -189,6 +195,9 @@ func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
 					coordsSync.Wait()
 					continue
 				}
+				if skipCoords {
+					continue
+				}
 				if withLimiter {
 					for i, _ := range nds {
 						if !limiter.IntersectsBuffer(g, nds[i].Long, nds[i].Lat) {
@@ -219,6 +228,9 @@ func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
 					coordsSync.Wait()
 					continue
 				}
+				if skipNodes {
+					continue
+				}
 				numWithTags := 0
 				for i, _ := range nds {
 					m.Filter(&nds[i].Tags)
@@ -238,6 +250,12 @@ func ReadPbf(cache *osmcache.OSMCache, progress *stats.Statistics,
 		}()
 	}
 
-	parser.Parse()
+	parser.Parse(coords, nodes, ways, relations)
+	close(nodes)
+	close(coords)
+	close(ways)
+	close(relations)
 	waitWriter.Wait()
+
+	return nil
 }

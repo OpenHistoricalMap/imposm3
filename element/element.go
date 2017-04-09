@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 )
 
 type Tags map[string]string
@@ -13,8 +14,9 @@ func (t *Tags) String() string {
 }
 
 type OSMElem struct {
-	Id   int64 `json:"-"`
-	Tags Tags  `json:"tags,omitempty"`
+	Id       int64     `json:"-"`
+	Tags     Tags      `json:"tags,omitempty"`
+	Metadata *Metadata `json:"-"`
 }
 
 type Node struct {
@@ -72,11 +74,21 @@ type Member struct {
 	Type MemberType `json:"type"`
 	Role string     `json:"role"`
 	Way  *Way       `json:"-"`
+	Node *Node      `json:"-"`
+	Elem *OSMElem   `json:"-"`
 }
 
 type Relation struct {
 	OSMElem
 	Members []Member `json:"members"`
+}
+
+type Metadata struct {
+	UserId    int
+	UserName  string
+	Version   int
+	Timestamp time.Time
+	Changeset int
 }
 
 type IdRefs struct {

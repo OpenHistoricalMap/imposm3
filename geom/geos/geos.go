@@ -1,7 +1,7 @@
 package geos
 
 /*
-#cgo LDFLAGS: -lgeos_c -lgeos
+#cgo LDFLAGS: -lgeos_c
 #include "geos_c.h"
 #include <stdlib.h>
 
@@ -322,6 +322,7 @@ func (this *Geom) Bounds() Bounds {
 	if geom == nil {
 		return NilBounds
 	}
+	defer C.GEOSGeom_destroy(geom)
 	extRing := C.GEOSGetExteriorRing(geom)
 	if extRing == nil {
 		return NilBounds
