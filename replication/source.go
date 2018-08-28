@@ -77,7 +77,7 @@ func newDownloader(dest, url string, seq int, interval time.Duration) *downloade
 		lastSequence: seq,
 		interval:     interval,
 		errWaittime:  60 * time.Second,
-		naWaittime:   10 * time.Second,
+		naWaittime:   60 * time.Second,
 		sequences:    make(chan Sequence, 1),
 		client:       client,
 	}
